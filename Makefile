@@ -10,7 +10,8 @@ OBJS = $(OBJ)/admin.o \
        $(OBJ)/loan.o \
        $(OBJ)/manager.o \
        $(OBJ)/utils.o \
-       $(OBJ)/locks.o
+       $(OBJ)/locks.o \
+       $(OBJ)/sessions.o
 
 all: server client
 

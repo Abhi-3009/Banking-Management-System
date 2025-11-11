@@ -57,12 +57,11 @@ static void admin_menu() {
 static void manager_menu() {
     puts("\n--- Manager Menu ---");
     puts("1) List Loans");
-    puts("2) Approve Loan");
-    puts("3) Reject Loan");
-    puts("4) Toggle Account Active/Inactive");
-    puts("5) List Feedback");
-    puts("6) View Account");
-    puts("7) Logout");
+    puts("2) Assign Loan to Employee");
+    puts("3) Toggle Account Active/Inactive");
+    puts("4) List Feedback");
+    puts("5) View Account");
+    puts("6) Logout");
     printf("Choice: ");
 }
 
@@ -71,7 +70,9 @@ static void employee_menu() {
     puts("1) View Account");
     puts("2) List Customers");
     puts("3) List Loans");
-    puts("4) Logout");
+    puts("4) Approve Loan");
+    puts("5) Reject Loan");
+    puts("6) Logout");
     printf("Choice: ");
 }
 
@@ -154,20 +155,57 @@ int main() {
         } else if (strcmp(role,"MANAGER")==0) {
             while (1) {
                 manager_menu(); readline(tmp,sizeof(tmp)); int c = atoi(tmp);
-                if (c == 1) { snprintf(cmd,sizeof(cmd),"LIST_LOANS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 2) { char lid[32]; printf("Loan ID: "); readline(lid,sizeof(lid)); snprintf(cmd,sizeof(cmd),"APPROVE_LOAN|%s",lid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 3) { char lid[32]; printf("Loan ID: "); readline(lid,sizeof(lid)); snprintf(cmd,sizeof(cmd),"REJECT_LOAN|%s",lid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 4) { char aid[32], val[8]; printf("Account ID: "); readline(aid,sizeof(aid)); printf("Active? (1/0): "); readline(val,sizeof(val)); snprintf(cmd,sizeof(cmd),"TOGGLE_ACCOUNT|%s|%s",aid,val); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 5) { snprintf(cmd,sizeof(cmd),"LIST_FEEDBACK|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 6) { char aid[32]; printf("Account ID: "); readline(aid,sizeof(aid)); snprintf(cmd,sizeof(cmd),"VIEW_ACCOUNT|%s",aid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
+                if (c == 1) {
+                    snprintf(cmd,sizeof(cmd),"LIST_LOANS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 2) {
+                    char lid[32], eid[32];
+                    printf("Loan ID: "); readline(lid,sizeof(lid));
+                    printf("Assign to Employee ID: "); readline(eid,sizeof(eid));
+                    snprintf(cmd,sizeof(cmd),"ASSIGN_LOAN|%s|%s", lid, eid);
+                    send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 3) {
+                    char aid[32], val[8];
+                    printf("Account ID: "); readline(aid,sizeof(aid));
+                    printf("Active? (1/0): "); readline(val,sizeof(val));
+                    snprintf(cmd,sizeof(cmd),"TOGGLE_ACCOUNT|%s|%s",aid,val);
+                    send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 4) {
+                    snprintf(cmd,sizeof(cmd),"LIST_FEEDBACK|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 5) {
+                    char aid[32]; printf("Account ID: "); readline(aid,sizeof(aid));
+                    snprintf(cmd,sizeof(cmd),"VIEW_ACCOUNT|%s",aid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
                 else { snprintf(cmd,sizeof(cmd),"LOGOUT|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); break; }
             }
         } else if (strcmp(role,"EMPLOYEE")==0) {
             while (1) {
                 employee_menu(); readline(tmp,sizeof(tmp)); int c = atoi(tmp);
-                if (c == 1) { char aid[32]; printf("Account ID: "); readline(aid,sizeof(aid)); snprintf(cmd,sizeof(cmd),"VIEW_ACCOUNT|%s",aid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 2) { snprintf(cmd,sizeof(cmd),"LIST_CUSTOMERS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
-                else if (c == 3) { snprintf(cmd,sizeof(cmd),"LIST_LOANS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); }
+                if (c == 1) {
+                    char aid[32]; printf("Account ID: "); readline(aid,sizeof(aid));
+                    snprintf(cmd,sizeof(cmd),"VIEW_ACCOUNT|%s",aid); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 2) {
+                    snprintf(cmd,sizeof(cmd),"LIST_CUSTOMERS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 3) {
+                    snprintf(cmd,sizeof(cmd),"LIST_LOANS|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 4) {
+                    char lid[32];
+                    printf("Loan ID to approve: "); readline(lid,sizeof(lid));
+                    snprintf(cmd,sizeof(cmd),"APPROVE_LOAN|%s", lid);
+                    send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
+                else if (c == 5) {
+                    char lid[32];
+                    printf("Loan ID to reject: "); readline(lid,sizeof(lid));
+                    snprintf(cmd,sizeof(cmd),"REJECT_LOAN|%s", lid);
+                    send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp);
+                }
                 else { snprintf(cmd,sizeof(cmd),"LOGOUT|"); send_and_recv(sock,cmd,resp,sizeof(resp)); printf("%s\n",resp); break; }
             }
         } else {
@@ -176,7 +214,7 @@ int main() {
                 readline(tmp, sizeof(tmp));
                 int c = atoi(tmp);
 
-                if (c == 1) {
+                if (c == 1) {       // Deposit
                     char amt[64];
                     printf("Amount: ");
                     readline(amt, sizeof(amt));

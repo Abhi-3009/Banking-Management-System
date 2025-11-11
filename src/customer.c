@@ -10,7 +10,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-/* helper: current timestamp */
 static void now_str(char *buf, size_t n) {
     time_t t = time(NULL);
     struct tm tm;
@@ -18,7 +17,7 @@ static void now_str(char *buf, size_t n) {
     strftime(buf, n, "%Y-%m-%d %H:%M:%S", &tm);
 }
 
-/* authenticate customer by id+pin */
+// authenticate customer
 int customer_auth(acc_id_t id, const char *pin) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) return 0;
@@ -26,7 +25,6 @@ int customer_auth(acc_id_t id, const char *pin) {
     if (fd < 0) { fclose(fp); return 0; }
     if (lock_file(fd, 0) != 0) { fclose(fp); return 0; }
     char line[512];
-    /* skip header if present */
     fgets(line, sizeof(line), fp);
     int ok = 0;
     while (fgets(line, sizeof(line), fp)) {
@@ -41,7 +39,7 @@ int customer_auth(acc_id_t id, const char *pin) {
     return ok;
 }
 
-/* append transaction row */
+// transaction log
 static void log_transaction_csv(const Transaction *t) {
     FILE *fp = fopen(TXN_FILE, "a+");
     if (!fp) return;
@@ -49,11 +47,9 @@ static void log_transaction_csv(const Transaction *t) {
     if (fd < 0) { fclose(fp); return; }
     if (lock_file(fd,1) != 0) { fclose(fp); return; }
 
-    /* find next txn id */
     int maxid = 9000;
     char line[512];
     rewind(fp);
-    /* skip header if present */
     if (fgets(line,sizeof(line),fp)) {
         int id; if (sscanf(line, "%d,", &id) == 1 && id > maxid) maxid = id;
     }
@@ -70,7 +66,7 @@ static void log_transaction_csv(const Transaction *t) {
     fclose(fp);
 }
 
-/* get account by id (reads CSV). Caller must not modify global files */
+// read account
 int read_account_by_id(acc_id_t id, Account *out) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) return 0;
@@ -79,7 +75,7 @@ int read_account_by_id(acc_id_t id, Account *out) {
     if (lock_file(fd, 0) != 0) { fclose(fp); return 0; }
 
     char line[512];
-    fgets(line, sizeof(line), fp); /* header */
+    fgets(line, sizeof(line), fp);
     int found = 0;
     while (fgets(line, sizeof(line), fp)) {
         Account a;
@@ -94,6 +90,7 @@ int read_account_by_id(acc_id_t id, Account *out) {
     return found;
 }
 
+// deposit amount
 int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
     if (amt <= 0) { snprintf(out, out_n, "ERR|Invalid amount"); return 0; }
 
@@ -105,7 +102,6 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
     if (lock_file(fd, 1) != 0) { fclose(fp); snprintf(out, out_n, "ERR|Lock failed"); return 0; }
 
     char line[512];
-    /* read header (if present) */
     if (!fgets(line, sizeof(line), fp)) {
         unlock_file(fd); fclose(fp); snprintf(out, out_n, "ERR|Read failed"); return 0;
     }
@@ -115,18 +111,14 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
     int matched = 0;
 
     while (fgets(line, sizeof(line), fp)) {
-        Account a = {0}; /* important: zero-init so fields are defined if parse fails */
-        /* strip possible trailing newline */
+        Account a = {0};
         size_t L = strlen(line); if (L && (line[L-1]=='\n' || line[L-1]=='\r')) line[L-1]=0;
         int got = sscanf(line, "%d,%49[^,],%15[^,],%lf,%d,%d",
                          &a.id, a.name, a.pin, &a.balance, &a.role, &a.active);
         if (got != 6) {
-            /* skip malformed lines but still store them unchanged */
-            /* If you want to detect malformed data, enable debug or return error here */
             continue;
         }
         if (cnt >= cap) { cap = cap ? cap * 2 : 32; arr = realloc(arr, cap * sizeof(Account)); }
-        /* update every row matching the id (if duplicates exist) */
         if (a.id == id) {
             if (!a.active) {
                 free(arr);
@@ -135,7 +127,6 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
                 snprintf(out, out_n, "ERR|Inactive");
                 return 0;
             }
-            /* numeric addition */
             a.balance += amt;
             matched = 1;
         }
@@ -150,16 +141,13 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
         return 0;
     }
 
-    /* write to temp file and fsync */
     char tmpname[256];
     snprintf(tmpname, sizeof(tmpname), "%s.tmp", ACC_FILE);
     FILE *tf = fopen(tmpname, "w");
     if (!tf) { free(arr); unlock_file(fd); fclose(fp); snprintf(out, out_n, "ERR|Temp open failed"); return 0; }
 
-    /* write header then rows */
     fprintf(tf, "id,name,pin,balance,role,active\n");
     for (size_t i = 0; i < cnt; ++i) {
-        /* use precise formatting for balance */
         fprintf(tf, "%d,%s,%s,%.2f,%d,%d\n",
                 arr[i].id, arr[i].name, arr[i].pin, arr[i].balance, arr[i].role, arr[i].active);
     }
@@ -167,19 +155,15 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
     int tfd = fileno(tf);
     if (tfd >= 0) fsync(tfd);
     fclose(tf);
-
-    /* done with original file lock now: unlock and close */
     unlock_file(fd);
     fclose(fp);
 
-    /* atomic replace */
     if (rename(tmpname, ACC_FILE) != 0) {
         free(arr);
         snprintf(out, out_n, "ERR|Replace failed");
         return 0;
     }
 
-    /* log transaction row */
     Transaction t;
     t.acc_id = id;
     strncpy(t.type, "DEPOSIT", sizeof(t.type)-1);
@@ -194,6 +178,7 @@ int customer_deposit(acc_id_t id, double amt, char *out, size_t out_n) {
     return 1;
 }
 
+// withdraw amount
 int customer_withdraw(acc_id_t id, double amt, char *out, size_t out_n) {
     if (amt <= 0) {
         snprintf(out, out_n, "ERR|Invalid amount");
@@ -251,7 +236,7 @@ int customer_withdraw(acc_id_t id, double amt, char *out, size_t out_n) {
                 snprintf(out, out_n, "ERR|Insufficient balance (%.2f)", a.balance);
                 return 0;
             }
-            a.balance -= amt;   // Proper numeric subtraction
+            a.balance -= amt;
             current_balance = a.balance;
             matched = 1;
         }
@@ -266,7 +251,6 @@ int customer_withdraw(acc_id_t id, double amt, char *out, size_t out_n) {
         return 0;
     }
 
-    /* Atomic file write */
     char tmpname[256];
     snprintf(tmpname, sizeof(tmpname), "%s.tmp", ACC_FILE);
     FILE *tf = fopen(tmpname, "w");
@@ -298,7 +282,6 @@ int customer_withdraw(acc_id_t id, double amt, char *out, size_t out_n) {
         return 0;
     }
 
-    /* Log transaction */
     Transaction t;
     t.acc_id = id;
     strncpy(t.type, "WITHDRAW", sizeof(t.type) - 1);
@@ -313,6 +296,7 @@ int customer_withdraw(acc_id_t id, double amt, char *out, size_t out_n) {
     return 1;
 }
 
+// transfer amount
 int customer_transfer(acc_id_t from, acc_id_t to, double amt, char *out, size_t out_n) {
     if (amt <= 0) { snprintf(out,out_n,"ERR|Bad amount"); return 0; }
     if (from == to) { snprintf(out,out_n,"ERR|Same account"); return 0; }
@@ -343,13 +327,10 @@ int customer_transfer(acc_id_t from, acc_id_t to, double amt, char *out, size_t 
     }
     if (!idx_from_exists || !idx_to_exists) { free(arr); unlock_file(fd); fclose(fp); snprintf(out,out_n,"ERR|Account missing"); return 0; }
 
-    /* ensure from has sufficient total balance across entries (if duplicates) */
     double total_from_balance = 0.0;
     for (size_t i=0;i<cnt;i++) if (arr[i].id == from) total_from_balance += arr[i].balance;
     if (total_from_balance < amt) { free(arr); unlock_file(fd); fclose(fp); snprintf(out,out_n,"ERR|Insufficient"); return 0; }
 
-    /* now deduct proportionally from 'from' rows and add proportionally to 'to' rows
-       Simpler: deduct from the first 'from' row(s) until amt consumed, and credit first 'to' row(s). */
     double remaining = amt;
     for (size_t i=0;i<cnt && remaining>0;i++){
         if (arr[i].id == from) {
@@ -358,10 +339,8 @@ int customer_transfer(acc_id_t from, acc_id_t to, double amt, char *out, size_t 
             remaining -= take;
         }
     }
-    /* if something remains it's an error (shouldn't happen due to earlier check) */
     if (remaining > 0.0001) { free(arr); unlock_file(fd); fclose(fp); snprintf(out,out_n,"ERR|Transfer failed"); return 0; }
 
-    /* credit 'to' accounts: add to first to-row */
     remaining = amt;
     for (size_t i=0;i<cnt && remaining>0;i++){
         if (arr[i].id == to) {
@@ -397,6 +376,7 @@ int customer_transfer(acc_id_t from, acc_id_t to, double amt, char *out, size_t 
     return 1;
 }
 
+// view transaction history
 int customer_view_history(acc_id_t id, char *out, size_t out_n) {
     FILE *fp = fopen(TXN_FILE, "r");
     if (!fp) { snprintf(out,out_n,"No history\n"); return 0; }
@@ -405,7 +385,6 @@ int customer_view_history(acc_id_t id, char *out, size_t out_n) {
     if (lock_file(fd,0) != 0) { fclose(fp); snprintf(out,out_n,"ERR|Lock failed"); return 0; }
 
     char line[512]; size_t pos=0;
-    /* copy header/rows for this account */
     while (fgets(line,sizeof(line),fp)) {
         int tid, aid; char type[32]; double amt; int other; char ts[64];
         if (sscanf(line, "%d,%d,%31[^,],%lf,%d,%31[^\n]",
@@ -423,6 +402,7 @@ int customer_view_history(acc_id_t id, char *out, size_t out_n) {
     return 1;
 }
 
+// change PIN
 int customer_change_pin(acc_id_t id, const char *oldpin, const char *newpin, char *out, size_t out_n) {
     if (!oldpin || !newpin) { snprintf(out,out_n,"ERR|Bad args"); return 0; }
 
@@ -477,6 +457,7 @@ int customer_change_pin(acc_id_t id, const char *oldpin, const char *newpin, cha
     return 1;
 }
 
+// check balance
 int customer_balance(acc_id_t id, char *out, size_t out_n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) {
@@ -527,6 +508,7 @@ int customer_balance(acc_id_t id, char *out, size_t out_n) {
     return 1;
 }
 
+// submit feedback
 int customer_feedback(acc_id_t id, const char *text, char *out, size_t out_n) {
     if (!text) { snprintf(out,out_n,"ERR|No text"); return 0; }
     FILE *fp = fopen(FB_FILE, "a+");
@@ -535,7 +517,6 @@ int customer_feedback(acc_id_t id, const char *text, char *out, size_t out_n) {
     if (fd < 0) { fclose(fp); snprintf(out,out_n,"ERR|fileno"); return 0; }
     if (lock_file(fd,1) != 0) { fclose(fp); snprintf(out,out_n,"ERR|Lock failed"); return 0; }
 
-    /* find max fb_id */
     int maxid = 0;
     char line[512];
     rewind(fp);
@@ -544,7 +525,6 @@ int customer_feedback(acc_id_t id, const char *text, char *out, size_t out_n) {
     }
     int nid = maxid + 1;
     char ts[64]; now_str(ts,sizeof(ts));
-    /* write fb_id,account_id,feedback,timestamp */
     fprintf(fp, "%d,%d,%s,%s\n", nid, id, text, ts);
     fflush(fp);
 

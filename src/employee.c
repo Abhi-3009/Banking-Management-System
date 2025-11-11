@@ -2,10 +2,10 @@
 #include "../include/banking.h"
 #include "../include/locks.h"
 #include <stdio.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <string.h>
 
-/* view account */
+// view account details
 int employee_view_account(acc_id_t id, char *out, size_t out_n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(out,out_n,"ERR|Open failed"); return 0; }
@@ -14,7 +14,7 @@ int employee_view_account(acc_id_t id, char *out, size_t out_n) {
     if (lock_file(fd,0) != 0) { fclose(fp); snprintf(out,out_n,"ERR|Lock failed"); return 0; }
 
     char line[512];
-    fgets(line,sizeof(line),fp); /* header */
+    fgets(line,sizeof(line),fp);
     int found=0;
     while (fgets(line,sizeof(line),fp)) {
         Account a;
@@ -34,6 +34,7 @@ int employee_view_account(acc_id_t id, char *out, size_t out_n) {
     return 1;
 }
 
+// list all customers
 int employee_list_customers(char *out, size_t out_n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(out,out_n,"ERR|Open failed"); return 0; }
@@ -52,6 +53,7 @@ int employee_list_customers(char *out, size_t out_n) {
     return 1;
 }
 
+// list all loans
 int employee_list_loans(char *out, size_t out_n) {
     extern int loan_list_all(char*, size_t);
     return loan_list_all(out, out_n);

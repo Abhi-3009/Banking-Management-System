@@ -2,23 +2,35 @@
 #include "../include/banking.h"
 #include "../include/locks.h"
 #include <stdio.h>
-#include <unistd.h> 
+#include <unistd.h>
 #include <string.h>
 
-/* wrappers */
 extern int loan_list_all(char*, size_t);
-extern int loan_approve(int, char*, size_t);
-extern int loan_reject(int, char*, size_t);
 extern int employee_list_customers(char*, size_t);
 extern int employee_view_account(acc_id_t, char*, size_t);
+extern int loan_assign(int, int, char*, size_t);
 
-int manager_approve_loan(int loan_id, char *out, size_t out_n) { return loan_approve(loan_id, out, out_n); }
-int manager_reject_loan(int loan_id, char *out, size_t out_n) { return loan_reject(loan_id, out, out_n); }
+int manager_approve_loan(int loan_id, char *out, size_t out_n) {
+    (void)loan_id;
+    snprintf(out, out_n, "ERR|Managers cannot approve loans; assign to employee");
+    return 0;
+}
+int manager_reject_loan(int loan_id, char *out, size_t out_n) {
+    (void)loan_id;
+    snprintf(out, out_n, "ERR|Managers cannot reject loans; assign to employee");
+    return 0;
+}
+
 int manager_list_loans(char *out, size_t out_n) { return loan_list_all(out, out_n); }
 int manager_list_customers(char *out, size_t out_n) { return employee_list_customers(out, out_n); }
 int manager_view_account(acc_id_t id, char *out, size_t out_n) { return employee_view_account(id, out, out_n); }
 
-/* toggle active flag */
+// assign loan to employee
+int manager_assign_loan(int loan_id, int emp_id, char *out, size_t out_n) {
+    return loan_assign(loan_id, emp_id, out, out_n);
+}
+
+// toggle account active/inactive
 int manager_toggle_account(acc_id_t id, int active, char *out, size_t out_n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(out,out_n,"ERR|Open failed"); return 0; }
@@ -27,7 +39,6 @@ int manager_toggle_account(acc_id_t id, int active, char *out, size_t out_n) {
     if (lock_file(fd,1) != 0) { fclose(fp); snprintf(out,out_n,"ERR|Lock failed"); return 0; }
 
     char line[512];
-    /* skip header */
     if (!fgets(line, sizeof(line), fp)) { unlock_file(fd); fclose(fp); snprintf(out,out_n,"ERR|Read failed"); return 0; }
 
     Account *arr=NULL; size_t cap=0,cnt=0;
@@ -65,7 +76,7 @@ int manager_toggle_account(acc_id_t id, int active, char *out, size_t out_n) {
     return 1;
 }
 
-/* list feedbacks */
+// list feedback
 int manager_list_feedback(char *out, size_t out_n) {
     FILE *fp = fopen(FB_FILE, "r");
     if (!fp) { snprintf(out,out_n,"No feedbacks\n"); return 0; }

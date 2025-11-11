@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 
-/* Add account: writes a new CSV line with incremental id */
+// add account
 int admin_add_account(const char *name, const char *pin, int role, char *out, size_t out_n) {
     if (!name || !pin) {
         snprintf(out, out_n, "ERR|Invalid input");
@@ -41,7 +41,7 @@ int admin_add_account(const char *name, const char *pin, int role, char *out, si
 
     Account *arr = NULL;
     size_t cap = 0, cnt = 0;
-    int maxid = 10000; // base starting id for customers
+    int maxid = 10000;
 
     while (fgets(line, sizeof(line), fp)) {
         Account a;
@@ -75,7 +75,6 @@ int admin_add_account(const char *name, const char *pin, int role, char *out, si
     newacc.name[sizeof(newacc.name)-1] = '\0';
     newacc.pin[sizeof(newacc.pin)-1] = '\0';
 
-    // write to tmp file
     char tmpname[256];
     snprintf(tmpname, sizeof(tmpname), "%s.tmp", ACC_FILE);
     FILE *tf = fopen(tmpname, "w");
@@ -141,6 +140,7 @@ int admin_list_accounts(char *out, size_t out_n) {
     return 1;
 }
 
+// delete account
 int admin_delete_account(acc_id_t id, char *resp, size_t n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(resp, n, "ERR|Unable to open account file"); return 0; }
@@ -155,7 +155,6 @@ int admin_delete_account(acc_id_t id, char *resp, size_t n) {
     char line[512];
     int found = 0;
 
-    /* copy header and rows except deleted id */
     while (fgets(line, sizeof(line), fp)) {
         acc_id_t cid; char name[50], pin[16]; double bal; int role, active;
         if (sscanf(line, "%d,%49[^,],%15[^,],%lf,%d,%d",
@@ -163,7 +162,6 @@ int admin_delete_account(acc_id_t id, char *resp, size_t n) {
             if (cid == id) { found = 1; continue; }
             fprintf(tmp, "%d,%s,%s,%.2f,%d,%d\n", cid, name, pin, bal, role, active);
         } else {
-            /* write header or malformed line as-is */
             fputs(line, tmp);
         }
     }
@@ -173,7 +171,6 @@ int admin_delete_account(acc_id_t id, char *resp, size_t n) {
     unlock_file(fd);
     fclose(fp);
 
-    /* rename safely */
     if (rename(tmpname, ACC_FILE) != 0) {
         snprintf(resp, n, "ERR|Replace failed");
         return 0;
@@ -186,6 +183,7 @@ int admin_delete_account(acc_id_t id, char *resp, size_t n) {
     return found;
 }
 
+// modify account
 int admin_modify_account(acc_id_t id, const char *new_name, const char *new_pin, char *resp, size_t n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(resp, n, "ERR|Unable to open account file"); return 0; }
@@ -232,6 +230,7 @@ int admin_modify_account(acc_id_t id, const char *new_name, const char *new_pin,
     return found;
 }
 
+// search account
 int admin_search_account(acc_id_t id, char *out, size_t out_n) {
     FILE *fp = fopen(ACC_FILE, "r");
     if (!fp) { snprintf(out,out_n,"ERR|Open failed"); return 0; }
@@ -240,7 +239,6 @@ int admin_search_account(acc_id_t id, char *out, size_t out_n) {
     if (lock_file(fd, 0) != 0) { fclose(fp); snprintf(out,out_n,"ERR|Lock failed"); return 0; }
 
     char line[512];
-    /* skip header if present */
     fgets(line, sizeof(line), fp);
     while (fgets(line, sizeof(line), fp)) {
         Account a;

@@ -12,8 +12,9 @@
 #include <errno.h>
 
 #include "include/banking.h"
+#include "include/sessions.h"
 
-/* Demo credentials (kept for quick login) */
+// demo credentials
 #define ADMIN_ID 9999
 #define ADMIN_PIN "admin123"
 #define MANAGER_ID 8888
@@ -21,13 +22,12 @@
 #define EMPLOYEE_ID 7777
 #define EMPLOYEE_PIN "emp123"
 
+// server settings
 #define PORT 8080
 #define BACKLOG 8
 #define BUFSZ 8192
 
-/* --- Function declarations--- */
-
-/* ==== Admin functions ==== */
+// admin functions
 int admin_add_account(const char *name, const char *pin, int role, char *resp, size_t n);
 int admin_add_employee(const char *name, const char *pin, char *resp, size_t n);
 int admin_list_accounts(char *resp, size_t n);
@@ -35,7 +35,7 @@ int admin_delete_account(acc_id_t id, char *resp, size_t n);
 int admin_modify_account(acc_id_t id, const char *new_name, const char *new_pin, char *resp, size_t n);
 int admin_search_account(acc_id_t id, char *resp, size_t n);
 
-/* ==== Customer functions ==== */
+// customer functions
 int customer_auth(acc_id_t id, const char *pin);
 int customer_balance(acc_id_t id, char *resp, size_t n);
 int customer_deposit(acc_id_t id, double amt, char *resp, size_t n);
@@ -45,13 +45,13 @@ int customer_change_pin(acc_id_t id, const char *oldpin, const char *newpin, cha
 int customer_view_history(acc_id_t id, char *resp, size_t n);
 int customer_feedback(acc_id_t id, const char *text, char *resp, size_t n);
 
-/* ==== Employee functions ==== */
+// employee functions
 int employee_auth(acc_id_t id, const char *pin);
 int employee_view_account(acc_id_t id, char *resp, size_t n);
 int employee_list_customers(char *resp, size_t n);
 int employee_list_loans(char *resp, size_t n);
 
-/* ==== Manager functions ==== */
+// manager functions
 int manager_auth(acc_id_t id, const char *pin);
 int manager_approve_loan(int loan_id, char *resp, size_t n);
 int manager_reject_loan(int loan_id, char *resp, size_t n);
@@ -61,13 +61,17 @@ int manager_list_loans(char *resp, size_t n);
 int manager_toggle_account(acc_id_t id, int active, char *resp, size_t n);
 int manager_list_feedback(char *resp, size_t n);
 
-/* ==== Loan functions ==== */
+// loan functions
 int loan_apply(acc_id_t id, double amount, double interest, int months, char *resp, size_t n);
 int loan_list_all(char *resp, size_t n);
 int loan_approve(int loan_id, char *resp, size_t n);
 int loan_reject(int loan_id, char *resp, size_t n);
 
-/* Helper - safe send helper to avoid partial sends */
+// employee loan functions
+int loan_assign(int loan_id, int emp_id, char *resp, size_t n);
+int loan_approve_by_employee(int loan_id, int emp_id, char *resp, size_t n);
+int loan_reject_by_employee(int loan_id, int emp_id, char *resp, size_t n);
+
 static ssize_t safe_send(int fd, const char *buf, size_t n) {
     size_t sent = 0;
     while (sent < n) {
@@ -81,13 +85,12 @@ static ssize_t safe_send(int fd, const char *buf, size_t n) {
     return (ssize_t)sent;
 }
 
-/* Serve a single connected client (forked child) */
 void serve_client(int connfd) {
     char sbuf[BUFSZ];
     char reply[BUFSZ];
 
     acc_id_t logged_in_id = -1;
-    char current_role[16] = "NONE"; /* "ADMIN", "MANAGER", "EMPLOYEE", "CUST", "NONE" */
+    char current_role[16] = "NONE"; // "ADMIN", "MANAGER", "EMPLOYEE", "CUST", "NONE"
 
     while (1) {
         memset(sbuf, 0, sizeof(sbuf));
@@ -95,12 +98,10 @@ void serve_client(int connfd) {
         if (n <= 0) break;
         sbuf[n] = '\0';
 
-        /* trim trailing CR/LF */
         while (n > 0 && (sbuf[n-1] == '\n' || sbuf[n-1] == '\r')) { sbuf[n-1] = '\0'; n--; }
 
         if (sbuf[0] == '\0') continue;
 
-        /* tokenize a copy (we may need original) */
         char copy[BUFSZ];
         strncpy(copy, sbuf, sizeof(copy)-1);
         char *cmd = strtok(copy, "|");
@@ -125,37 +126,61 @@ void serve_client(int connfd) {
 
             if (strcmp(role, "ADMIN") == 0) {
                 if (id == ADMIN_ID && strcmp(pin, ADMIN_PIN) == 0) {
-                    strcpy(current_role, "ADMIN");
-                    current_role[strcspn(current_role, "\r\n")] = '\0';
-                    logged_in_id = (acc_id_t)ADMIN_ID;
-                    safe_send(connfd, "OK|ROLE:ADMIN\n", 13);
+                    if (session_is_active(ADMIN_ID, "ADMIN")) {
+                        safe_send(connfd, "ERR|Already logged in\n", 21);
+                    } else if (!session_set_active(ADMIN_ID, "ADMIN")) {
+                        safe_send(connfd, "ERR|Session create failed\n", 26);
+                    } else {
+                        strcpy(current_role, "ADMIN");
+                        current_role[strcspn(current_role, "\r\n")] = '\0';
+                        logged_in_id = (acc_id_t)ADMIN_ID;
+                        safe_send(connfd, "OK|ROLE:ADMIN\n", 13);
+                    }
                 } else {
                     safe_send(connfd, "ERR|Login failed\n", 17);
                 }
             } else if (strcmp(role, "MANAGER") == 0 || strcmp(role, "MGR") == 0) {
                 if (id == MANAGER_ID && strcmp(pin, MANAGER_PIN) == 0) {
-                    strcpy(current_role, "MANAGER");
-                    current_role[strcspn(current_role, "\r\n")] = '\0';
-                    logged_in_id = (acc_id_t)MANAGER_ID;
-                    safe_send(connfd, "OK|ROLE:MANAGER\n", 15);
+                    if (session_is_active(MANAGER_ID, "MANAGER")) {
+                        safe_send(connfd, "ERR|Already logged in\n", 21);
+                    } else if (!session_set_active(MANAGER_ID, "MANAGER")) {
+                        safe_send(connfd, "ERR|Session create failed\n", 26);
+                    } else {
+                        strcpy(current_role, "MANAGER");
+                        current_role[strcspn(current_role, "\r\n")] = '\0';
+                        logged_in_id = (acc_id_t)MANAGER_ID;
+                        safe_send(connfd, "OK|ROLE:MANAGER\n", 15);
+                    }
                 } else {
                     safe_send(connfd, "ERR|Login failed\n", 17);
                 }
             } else if (strcmp(role, "EMPLOYEE") == 0 || strcmp(role, "EMP") == 0) {
                 if (id == EMPLOYEE_ID && strcmp(pin, EMPLOYEE_PIN) == 0) {
-                    strcpy(current_role, "EMPLOYEE");
-                    current_role[strcspn(current_role, "\r\n")] = '\0';
-                    logged_in_id = (acc_id_t)EMPLOYEE_ID;
-                    safe_send(connfd, "OK|ROLE:EMPLOYEE\n", 16);
+                    if (session_is_active(EMPLOYEE_ID, "EMPLOYEE")) {
+                        safe_send(connfd, "ERR|Already logged in\n", 21);
+                    } else if (!session_set_active(EMPLOYEE_ID, "EMPLOYEE")) {
+                        safe_send(connfd, "ERR|Session create failed\n", 26);
+                    } else {
+                        strcpy(current_role, "EMPLOYEE");
+                        current_role[strcspn(current_role, "\r\n")] = '\0';
+                        logged_in_id = (acc_id_t)EMPLOYEE_ID;
+                        safe_send(connfd, "OK|ROLE:EMPLOYEE\n", 16);
+                    }
                 } else {
                     safe_send(connfd, "ERR|Login failed\n", 17);
                 }
             } else if (strcmp(role, "CUST") == 0 || strcmp(role, "CUSTOMER") == 0) {
                 if (customer_auth(id, pin)) {
-                    strcpy(current_role, "CUST");
-                    current_role[strcspn(current_role, "\r\n")] = '\0';
-                    logged_in_id = id;
-                    safe_send(connfd, "OK|ROLE:CUST\n", 13);
+                    if (session_is_active(id, "CUST")) {
+                        safe_send(connfd, "ERR|Already logged in\n", 21);
+                    } else if (!session_set_active(id, "CUST")) {
+                        safe_send(connfd, "ERR|Session create failed\n", 26);
+                    } else {
+                        strcpy(current_role, "CUST");
+                        current_role[strcspn(current_role, "\r\n")] = '\0';
+                        logged_in_id = id;
+                        safe_send(connfd, "OK|ROLE:CUST\n", 13);
+                    }
                 } else {
                     safe_send(connfd, "ERR|Login failed\n", 17);
                 }
@@ -165,15 +190,17 @@ void serve_client(int connfd) {
             continue;
         }
 
-        /* ---------------- LOGOUT/QUIT ---------------- */
+        /* ---------------- LOGOUT ---------------- */
         if (strcmp(cmd, "LOGOUT") == 0 || strcmp(cmd, "QUIT") == 0) {
+            if (logged_in_id != -1) {
+                session_set_inactive(logged_in_id, current_role);
+            }
             logged_in_id = -1;
             strcpy(current_role, "NONE");
             safe_send(connfd, "BYE\n", 4);
             continue;
         }
 
-        /* Any other command requires role/session validation in places */
         /* ---------------- ADMIN commands ---------------- */
         if (strcmp(cmd, "ADD_ACCOUNT") == 0 && strcmp(current_role, "ADMIN") == 0) {
             char *name = strtok(NULL, "|");
@@ -224,18 +251,20 @@ void serve_client(int connfd) {
             continue;
         }
 
-        /* ---------------- CUSTOMER commands (use logged_in_id only) ---------------- */
+        /* ---------------- CUSTOMER commands ---------------- */
         if (strcmp(cmd, "DEPOSIT") == 0) {
             char *am = strtok(NULL, "|");
             double amount = atof(am);
             customer_deposit(logged_in_id, amount, reply, sizeof(reply));
             send(connfd, reply, strlen(reply), 0);
+            continue;
         }
         else if (strcmp(cmd, "WITHDRAW") == 0) {
             char *am = strtok(NULL, "|");
             double amount = atof(am);
             customer_withdraw(logged_in_id, amount, reply, sizeof(reply));
             send(connfd, reply, strlen(reply), 0);
+            continue;
         } else if (strcmp(cmd, "BALANCE") == 0 && strcmp(current_role, "CUST") == 0) {
             customer_balance(logged_in_id, reply, sizeof(reply));
             size_t L = strlen(reply); if (L && reply[L-1] != '\n') strcat(reply, "\n");
@@ -272,14 +301,14 @@ void serve_client(int connfd) {
             continue;
         } else if (strcmp(cmd, "APPLYLOAN") == 0 && strcmp(current_role, "CUST") == 0) {
             char *am = strtok(NULL, "|");
-            if (!am) { snprintf(reply, sizeof(reply), "ERR|Missing amount"); send(connfd, reply, strlen(reply), 0); continue; }
+            if (!am) { snprintf(reply, sizeof(reply), "ERR|Missing amount"); safe_send(connfd, reply, strlen(reply)); continue; }
             double amount = atof(am);
             char *it = strtok(NULL, "|");
             char *mn = strtok(NULL, "|");
             double interest = it ? atof(it) : 0.0;
             int months = mn ? atoi(mn) : 0;
             loan_apply(logged_in_id, amount, interest, months, reply, sizeof(reply));
-            send(connfd, reply, strlen(reply), 0);
+            safe_send(connfd, reply, strlen(reply));
             continue;
         }
 
@@ -312,20 +341,33 @@ void serve_client(int connfd) {
             continue;
         }
 
-        /* ---------------- MANAGER actions ---------------- */
-        if (strcmp(cmd, "APPROVE_LOAN") == 0 && strcmp(current_role, "MANAGER") == 0) {
+        /* ---------------- EMPLOYEE actions ---------------- */
+        if (strcmp(cmd, "APPROVE_LOAN") == 0 && strcmp(current_role, "EMPLOYEE") == 0) {
             char *lid_s = strtok(NULL, "|");
             if (!lid_s) { safe_send(connfd, "ERR|Missing id\n", 15); continue; }
             int lid = atoi(lid_s);
-            manager_approve_loan(lid, reply, sizeof(reply));
+            loan_approve_by_employee(lid, logged_in_id, reply, sizeof(reply));
             size_t L = strlen(reply); if (L && reply[L-1] != '\n') strcat(reply, "\n");
             safe_send(connfd, reply, strlen(reply));
             continue;
-        } else if (strcmp(cmd, "REJECT_LOAN") == 0 && strcmp(current_role, "MANAGER") == 0) {
+        } else if (strcmp(cmd, "REJECT_LOAN") == 0 && strcmp(current_role, "EMPLOYEE") == 0) {
             char *lid_s = strtok(NULL, "|");
             if (!lid_s) { safe_send(connfd, "ERR|Missing id\n", 15); continue; }
             int lid = atoi(lid_s);
-            manager_reject_loan(lid, reply, sizeof(reply));
+            loan_reject_by_employee(lid, logged_in_id, reply, sizeof(reply));
+            size_t L = strlen(reply); if (L && reply[L-1] != '\n') strcat(reply, "\n");
+            safe_send(connfd, reply, strlen(reply));
+            continue;
+        }
+
+        /* ---------------- MANAGER actions ---------------- */
+        if (strcmp(cmd, "ASSIGN_LOAN") == 0 && strcmp(current_role, "MANAGER") == 0) {
+            char *lid_s = strtok(NULL, "|");
+            char *eid_s = strtok(NULL, "|");
+            if (!lid_s || !eid_s) { safe_send(connfd, "ERR|Missing args\n", 17); continue; }
+            int lid = atoi(lid_s);
+            int eid = atoi(eid_s);
+            loan_assign(lid, eid, reply, sizeof(reply));
             size_t L = strlen(reply); if (L && reply[L-1] != '\n') strcat(reply, "\n");
             safe_send(connfd, reply, strlen(reply));
             continue;
@@ -345,19 +387,21 @@ void serve_client(int connfd) {
             safe_send(connfd, reply, strlen(reply));
             continue;
         }
-
-        /* unknown command or permission denied */
         safe_send(connfd, "ERR|Unknown or permission denied\n", 33);
+    }
+
+    if (logged_in_id != -1) {
+        session_set_inactive(logged_in_id, current_role);
+        logged_in_id = -1;
+        strcpy(current_role, "NONE");
     }
 
     close(connfd);
 }
 
-/* Ensure data dir and default files exist */
 void ensure_default_records() {
     mkdir("data", 0755);
 
-    /* Accounts */
     FILE *fa = fopen(ACC_FILE, "a+");
     FILE *ft = fopen(TXN_FILE, "a+");
     FILE *fl = fopen(LOAN_FILE, "a+");
@@ -371,11 +415,9 @@ void ensure_default_records() {
         return;
     }
 
-    /* If accounts is empty, write header + defaults */
     fseek(fa, 0, SEEK_END);
     if (ftell(fa) == 0) {
         fprintf(fa, "id,name,pin,balance,role,active\n");
-        /* roles: 1 ADMIN,2 MANAGER,3 EMPLOYEE,0 CUST */
         fprintf(fa, "9999,ADMIN,admin123,0.00,1,1\n");
         fprintf(fa, "8888,MANAGER,manager123,0.00,2,1\n");
         fprintf(fa, "7777,EMPLOYEE,emp123,0.00,3,1\n");
@@ -412,7 +454,7 @@ int main(void) {
     if (bind(listenfd, (struct sockaddr*)&serv, sizeof(serv)) < 0) { perror("bind"); return 1; }
     if (listen(listenfd, BACKLOG) < 0) { perror("listen"); return 1; }
 
-    printf("Multi-client Banking Server listening on port %d\n", PORT);
+    printf("Bank Server listening on port %d\n", PORT);
     signal(SIGCHLD, SIG_IGN);
 
     while (1) {

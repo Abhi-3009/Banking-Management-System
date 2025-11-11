@@ -3,11 +3,6 @@
 #include <sys/file.h>
 #include <unistd.h>
 
-/*
- * lock_file(fd, write)
- *  -> Acquire a read (shared) or write (exclusive) lock.
- *  Returns 0 on success, -1 on failure.
- */
 int lock_file(int fd, int write) {
     int op = write ? LOCK_EX : LOCK_SH;
     int ret = flock(fd, op);
@@ -21,11 +16,6 @@ int lock_file(int fd, int write) {
     return ret;
 }
 
-/*
- * unlock_file(fd)
- *  -> Release a lock.
- *  Returns 0 on success, -1 on failure.
- */
 int unlock_file(int fd) {
     int ret = flock(fd, LOCK_UN);
     if (ret == 0) {
